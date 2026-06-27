@@ -124,6 +124,41 @@ def _get_purchase_value(item):
     return _extract_action_value(action_values, "omni_purchase") if action_values else 0
 
 
+def get_campaign_daily_budgets(account_ids=None) -> dict:
+    """Returns {campaign_id: (daily_budget_in_account_currency, currency)} across
+    all configured Meta ad accounts. Meta returns USD-account budgets in cents
+    (e.g. "4000" = $40.00) but KRW-account budgets in plain won, so the raw
+    value is divided by 100 only for non-KRW currencies before being returned."""
+    account_ids = account_ids or META_AD_ACCOUNT_IDS
+    budgets = {}
+    for account_id in account_ids:
+        currency = get_account_info(account_id)["currency"]
+        url = f"{BASE_URL}/{account_id}/campaigns"
+        params = {
+            "fields": "id,daily_budget,lifetime_budget",
+            "access_token": META_ACCESS_TOKEN,
+            "limit": 500,
+        }
+        while url:
+            resp = requests.get(url, params=params if "?" not in url else None, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            if "error" in data:
+                raise RuntimeError(f"Meta API error ({account_id}): {data['error']}")
+            for item in data.get("data", []):
+                raw_budget = item.get("daily_budget") or item.get("lifetime_budget")
+                if raw_budget is None:
+                    continue
+                value = float(raw_budget)
+                if currency != "KRW":
+                    value = value / 100
+                budgets[item["id"]] = (value, currency)
+            paging = data.get("paging", {})
+            url = paging.get("next")
+            params = None
+    return budgets
+
+
 def get_active_adset_ids(account_ids=None) -> set:
     """Returns the set of adset_ids currently effective_status == ACTIVE,
     across all configured Meta ad accounts."""

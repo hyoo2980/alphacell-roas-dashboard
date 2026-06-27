@@ -72,7 +72,8 @@
       "Bash(python -c \"import config; print\\('ok', config.META_ACCESS_TOKEN[:10]\\)\")",
       "Bash(cd \"/c/Users/hyoo2/OneDrive/바탕 화면/클로드 자동화/알파셀올나잇세이프\" && rm -f all_names.txt cafe24_names.txt item_sample.json names.txt names2.txt && ls)",
       "Bash(python -m py_compile notify/discord.py)",
-      "Bash(taskkill //F //PID 7852)"
+      "Bash(taskkill //F //PID 7852)",
+      "Bash(taskkill //F //PID 7560)"
     ]
   }
 }

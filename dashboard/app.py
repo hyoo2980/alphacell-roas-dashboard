@@ -26,7 +26,8 @@ from analysis.roas import (
     load_adset_df,
     spend_by_account,
 )
-from collectors.meta import get_active_adset_ids
+from analysis.fx import get_usd_krw_rate
+from collectors.meta import get_active_adset_ids, get_campaign_daily_budgets
 
 st.set_page_config(page_title="알파셀 ROAS 대시보드", layout="wide")
 st.title("📊 알파셀 올나잇세이프 메타 광고 대시보드")
@@ -72,6 +73,23 @@ period_unit_label = "주차" if view_mode == "주단위" else "날짜"
 
 adset_opts = adset_label_options(period_df).sort_values("adset_name", ascending=True)
 adset_opts["label"] = adset_opts["adset_name"].str.slice(0, 14)
+
+campaign_id_by_adset = dict(df.drop_duplicates("adset_id").set_index("adset_id")["campaign_id"])
+campaign_budgets = get_campaign_daily_budgets()
+fx_rate = get_usd_krw_rate()
+
+
+def _budget_krw_label(adset_id: str) -> str:
+    campaign_id = campaign_id_by_adset.get(adset_id)
+    budget = campaign_budgets.get(campaign_id)
+    if not budget:
+        return ""
+    value, currency = budget
+    krw_value = value * fx_rate if currency != "KRW" else value
+    return f" (₩{krw_value:,.0f})"
+
+
+adset_opts["label"] = adset_opts["label"] + adset_opts["adset_id"].apply(_budget_krw_label)
 id_by_label = dict(zip(adset_opts["label"], adset_opts["adset_id"]))
 
 st.markdown("**광고 세트 선택**")
