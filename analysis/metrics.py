@@ -1,6 +1,16 @@
 import numpy as np
 import pandas as pd
 
+
+def shorten_adset_name(name: str) -> str:
+    """Adset names like '메인02C_2S57/62/70/81번★(겐)' are long and mostly
+    targeting/audience codes after the 'S' marker -- cut right after the first
+    'S' to keep tables/charts compact. Names with no 'S' (e.g. '1C_62번_0426')
+    are left untouched."""
+    idx = name.find("S")
+    return name[: idx + 1] if idx != -1 else name
+
+
 METRIC_DEFS = {
     "구매당 비용": {"numerator": "spend", "denominator": "purchases", "higher_is_better": False},
     "결제시작당 비용": {"numerator": "spend", "denominator": "initiate_checkout", "higher_is_better": False},

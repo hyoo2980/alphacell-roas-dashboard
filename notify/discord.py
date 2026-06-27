@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 import requests
 
+from analysis.metrics import shorten_adset_name as _shorten_adset_name
 from analysis.roas import (
     account_roas_summary,
     brand_total_roas,
@@ -160,14 +161,6 @@ def build_report(report_date: str) -> dict:
 
 def _truncate(s: str, n: int) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
-
-
-def _shorten_adset_name(name: str) -> str:
-    """Adset names like '메인02C_2S57/62/70/81번★(겐)' are long and mostly
-    targeting/audience codes after the 'S' marker -- cut right after the first
-    'S' to keep the table compact."""
-    idx = name.find("S")
-    return name[: idx + 1] if idx != -1 else name
 
 
 def _build_adset_table(active_adsets: list) -> str:

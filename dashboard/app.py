@@ -15,6 +15,7 @@ from analysis.metrics import (
     adset_label_options,
     daily_metrics_by_adset,
     detect_declining_adsets,
+    shorten_adset_name,
     weekly_metrics_by_adset,
 )
 from analysis.roas import (
@@ -53,6 +54,9 @@ df = df[df["adset_id"].isin(active_adset_ids)]
 if df.empty:
     st.warning("현재 활성화된 광고 세트의 데이터가 선택한 기간에 없습니다.")
     st.stop()
+
+df = df.copy()
+df["adset_name"] = df["adset_name"].apply(shorten_adset_name)
 
 weekly = weekly_metrics_by_adset(df)
 daily_metrics = daily_metrics_by_adset(df)
