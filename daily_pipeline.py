@@ -7,6 +7,8 @@ from collect_coupang_range import main as collect_coupang
 from collect_meta_range import main as collect_meta
 from collect_naver_range import main as collect_naver
 from notify.discord import send_account_report, send_daily_report
+from notify.testbed import send_testbed_report
+from config import TESTBED_AD_ACCOUNT_ID
 
 ROOT_DIR = Path(__file__).resolve().parent
 
@@ -49,14 +51,18 @@ def run(report_date: str):
     print("[3/6] 네이버 데이터 수집")
     collect_naver(report_date, report_date)
 
-    print("[4/6] 카페24 데이터 수집")
+    print("[4/7] 카페24 데이터 수집")
     collect_cafe24(report_date, report_date)
 
-    print("[5/6] 디스코드 리포트 발송")
+    print("[5/7] 테스트베드 계정 데이터 수집")
+    collect_meta(report_date, report_date, account_ids=[TESTBED_AD_ACCOUNT_ID])
+
+    print("[6/7] 디스코드 리포트 발송")
     send_daily_report(report_date)
     send_account_report(report_date)
+    send_testbed_report(report_date)
 
-    print("[6/6] GitHub에 데이터 푸시 (클라우드 대시보드 갱신)")
+    print("[7/7] GitHub에 데이터 푸시 (클라우드 대시보드 갱신)")
     push_data_to_github(report_date)
 
     print(f"=== 일일 파이프라인 완료: {report_date} ===")
