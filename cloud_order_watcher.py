@@ -214,12 +214,7 @@ def main():
     except Exception:
         print(f"[ERROR] Cafe24 체크 실패:\n{traceback.format_exc()}")
 
-    # 네이버 스마트스토어
-    try:
-        new_nv, cumulative = check_naver(today, seen, cumulative, is_bootstrap)
-        print(f"[INFO] 네이버: 신규 알림 {new_nv}건")
-    except Exception:
-        print(f"[ERROR] 네이버 체크 실패:\n{traceback.format_exc()}")
+    # 네이버는 IP 화이트리스트 제한으로 로컬 PC에서 별도 실행
 
     state["seen"] = seen
     state["cumulative"] = cumulative
