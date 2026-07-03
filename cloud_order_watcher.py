@@ -10,6 +10,7 @@ Cafe24 리프레시 토큰 갱신은 .env 대신 GitHub Repository Variables API
 
 import json
 import os
+import time
 import traceback
 from datetime import date
 from pathlib import Path
@@ -26,7 +27,8 @@ import config
 
 
 def _update_github_variable(name: str, value: str):
-    gh_token = os.environ.get("GITHUB_TOKEN", "")
+    # GITHUB_TOKEN은 Variables API 수정 권한이 없어 PAT를 별도 시크릿(GH_PAT)으로 사용
+    gh_token = os.environ.get("GH_PAT", "") or os.environ.get("GITHUB_TOKEN", "")
     gh_repo = os.environ.get("GITHUB_REPOSITORY", "")
     if not gh_token or not gh_repo:
         print(f"[WARN] GitHub variable 업데이트 불가 ({name}): GITHUB_TOKEN/GITHUB_REPOSITORY 미설정")
@@ -105,7 +107,16 @@ def send_alert(platform: str, order_id: str, amount: float, cumulative: float, d
     }
     if detail:
         embed["fields"].append({"name": "상세", "value": detail, "inline": False})
-    resp = http.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=30)
+    # Discord 웹훅 429 재시도
+    delay = 2.0
+    for attempt in range(4):
+        resp = http.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=30)
+        if resp.status_code == 429:
+            time.sleep(delay)
+            delay *= 2
+            continue
+        resp.raise_for_status()
+        return
     resp.raise_for_status()
 
 
@@ -179,11 +190,15 @@ def main():
 
     state = load_state()
     # state 구조: {"date": "YYYY-MM-DD", "seen": {...}, "cumulative": float}
-    # 날짜가 바뀌면 seen / cumulative 초기화 (매일 자정 자동 리셋)
+    # 날짜가 바뀌거나 seen이 비어있으면 bootstrap (기존 주문 무음 처리)
     if state.get("date") != today:
         state = {"date": today, "seen": {}, "cumulative": 0.0}
-        is_bootstrap = True  # 당일 첫 실행 → 기존 주문 무음 처리
+        is_bootstrap = True
         print(f"[INFO] 새 날짜({today}) 감지 — 상태 초기화 및 부트스트랩 실행")
+    elif not state.get("seen"):
+        # 이전 run이 실패해서 seen이 빈 채로 저장된 경우 — 재부트스트랩
+        is_bootstrap = True
+        print(f"[INFO] seen이 비어있음 — 부트스트랩 재실행")
     else:
         is_bootstrap = False
 

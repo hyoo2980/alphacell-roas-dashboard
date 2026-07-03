@@ -53,7 +53,7 @@ jobs:
           # Discord
           DISCORD_WEBHOOK_URL_ORDERS: ${{ secrets.DISCORD_WEBHOOK_URL_ORDERS }}
           # GitHub API (토큰 갱신용)
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           # config.py가 META_ACCESS_TOKEN을 require하므로 빈 값으로 통과
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
