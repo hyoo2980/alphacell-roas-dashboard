@@ -8,6 +8,10 @@ permissions:
   # CAFE24_REFRESH_TOKEN을 GitHub Variables API로 갱신하기 위해 필요
   actions: write
 
+concurrency:
+  group: order-watcher-alphacell
+  cancel-in-progress: false  # 동시 실행 방지 — 새 run은 이전 run 완료 후 실행
+
 jobs:
   check-orders:
     runs-on: ubuntu-latest
