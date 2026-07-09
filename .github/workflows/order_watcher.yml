@@ -1,10 +1,7 @@
 name: 실시간 주문 알림 (Cafe24 + 스마트스토어)
 
 on:
-  schedule:
-    # 매 5분마다 실행 (UTC 기준 — KST = UTC+9)
-    - cron: '*/5 * * * *'
-  workflow_dispatch:  # 수동 실행 버튼
+  workflow_dispatch:  # cron-job.org가 2분마다 외부에서 트리거
 
 permissions:
   contents: read
