@@ -48,6 +48,8 @@ jobs:
           CAFE24_MALL_ID: ${{ secrets.CAFE24_MALL_ID }}
           CAFE24_REDIRECT_URI: ${{ secrets.CAFE24_REDIRECT_URI }}
           CAFE24_REFRESH_TOKEN: ${{ vars.CAFE24_REFRESH_TOKEN }}
+          CAFE24_ACCESS_TOKEN: ${{ vars.CAFE24_ACCESS_TOKEN }}
+          CAFE24_ACCESS_TOKEN_EXPIRES_AT: ${{ vars.CAFE24_ACCESS_TOKEN_EXPIRES_AT }}
           # 네이버
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}

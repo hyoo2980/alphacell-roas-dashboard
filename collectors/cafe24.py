@@ -22,7 +22,12 @@ def _basic_auth_header():
 
 def _refresh_access_token():
     """Uses the current refresh token to get a new access token, and persists
-    the rotated refresh token back to .env (Cafe24 issues a new one each time)."""
+    the rotated refresh token back to .env (Cafe24 issues a new one each time).
+    Reads the refresh token fresh from .env on disk rather than the cached
+    config module attribute -- the daily pipeline (cron) and the long-running
+    realtime watcher both refresh independently, and whichever ran most recently
+    has already rotated the token on disk, invalidating any stale in-memory copy."""
+    current_refresh_token = config.get_env_value("CAFE24_REFRESH_TOKEN", config.CAFE24_REFRESH_TOKEN)
     resp = requests.post(
         f"{API_BASE}/oauth/token",
         headers={
@@ -31,7 +36,7 @@ def _refresh_access_token():
         },
         data={
             "grant_type": "refresh_token",
-            "refresh_token": config.CAFE24_REFRESH_TOKEN,
+            "refresh_token": current_refresh_token,
         },
         timeout=30,
     )
@@ -40,6 +45,9 @@ def _refresh_access_token():
 
     config.CAFE24_REFRESH_TOKEN = data["refresh_token"]
     config.update_env_value("CAFE24_REFRESH_TOKEN", data["refresh_token"])
+    # access token + 만료시각도 저장 → 클라우드 워처가 재사용 가능 (2시간마다만 rotate)
+    config.update_env_value("CAFE24_ACCESS_TOKEN", data["access_token"])
+    config.update_env_value("CAFE24_ACCESS_TOKEN_EXPIRES_AT", data["expires_at"])
 
     _token_cache["access_token"] = data["access_token"]
     return data["access_token"]

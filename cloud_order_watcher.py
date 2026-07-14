@@ -27,22 +27,21 @@ import config
 
 
 def _update_github_variable(name: str, value: str):
-    # GITHUB_TOKEN은 Variables API 수정 권한이 없어 PAT를 별도 시크릿(GH_PAT)으로 사용
     gh_token = os.environ.get("GH_PAT", "") or os.environ.get("GITHUB_TOKEN", "")
     gh_repo = os.environ.get("GITHUB_REPOSITORY", "")
     if not gh_token or not gh_repo:
-        print(f"[WARN] GitHub variable 업데이트 불가 ({name}): GITHUB_TOKEN/GITHUB_REPOSITORY 미설정")
+        print(f"[WARN] GitHub variable 업데이트 불가 ({name}): GH_PAT/GITHUB_REPOSITORY 미설정")
         return
-    resp = http.patch(
-        f"https://api.github.com/repos/{gh_repo}/actions/variables/{name}",
-        headers={
-            "Authorization": f"Bearer {gh_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        json={"name": name, "value": value},
-        timeout=10,
-    )
+    headers = {
+        "Authorization": f"Bearer {gh_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    base_url = f"https://api.github.com/repos/{gh_repo}/actions/variables"
+    resp = http.patch(f"{base_url}/{name}", headers=headers, json={"name": name, "value": value}, timeout=10)
+    if resp.status_code == 404:
+        # 변수가 없으면 새로 생성
+        resp = http.post(base_url, headers=headers, json={"name": name, "value": value}, timeout=10)
     if resp.ok:
         print(f"[INFO] GitHub variable '{name}' 갱신 완료")
     else:
@@ -62,6 +61,29 @@ def _patched_get_env(key: str, default: str = "") -> str:
 
 config.update_env_value = _patched_update_env
 config.get_env_value = _patched_get_env
+
+# ──────────────────────────────────────────────────────────────────
+# Cafe24 access token 캐시 주입
+# GitHub Variable에 저장된 access token이 아직 유효하면 재사용 →
+# refresh token rotation을 2분마다가 아닌 2시간마다로 줄임
+# ──────────────────────────────────────────────────────────────────
+def _inject_cached_access_token():
+    cached_token = os.environ.get("CAFE24_ACCESS_TOKEN", "")
+    expires_at_str = os.environ.get("CAFE24_ACCESS_TOKEN_EXPIRES_AT", "")
+    if not cached_token or not expires_at_str:
+        return
+    try:
+        # Cafe24 expires_at 형식: "2026-07-14T12:34:56.000" (KST)
+        expires_at = datetime.fromisoformat(expires_at_str.rstrip("0").rstrip("."))
+        expires_at = expires_at.replace(tzinfo=timezone(timedelta(hours=9)))
+        if expires_at > datetime.now(timezone(timedelta(hours=9))) + timedelta(minutes=5):
+            import collectors.cafe24 as _c24
+            _c24._token_cache["access_token"] = cached_token
+            print(f"[INFO] 캐시된 access token 재사용 (만료: {expires_at_str})")
+    except Exception as e:
+        print(f"[INFO] access token 캐시 로드 실패 ({e}) — 재발급 진행")
+
+_inject_cached_access_token()
 
 # ──────────────────────────────────────────────────────────────────
 # 상태 관리 (data/notified_cloud.json)
