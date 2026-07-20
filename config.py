@@ -93,15 +93,10 @@ def update_env_value(key: str, value: str):
     if gh_pat and gh_repo:
         try:
             import requests as _req
-            _req.patch(
-                f"https://api.github.com/repos/{gh_repo}/actions/variables/{key}",
-                headers={
-                    "Authorization": f"Bearer {gh_pat}",
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-                json={"name": key, "value": value},
-                timeout=10,
-            )
+            _h = {"Authorization": f"Bearer {gh_pat}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+            _base = f"https://api.github.com/repos/{gh_repo}/actions/variables"
+            _r = _req.patch(f"{_base}/{key}", headers=_h, json={"name": key, "value": value}, timeout=10)
+            if _r.status_code == 404:
+                _req.post(_base, headers=_h, json={"name": key, "value": value}, timeout=10)
         except Exception:
             pass
