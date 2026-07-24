@@ -1,8 +1,8 @@
-"""GitHub Actions에서 5분마다 실행되는 주문 알림 스크립트.
+"""GitHub Actions에서 2분마다 실행되는 주문 알림 스크립트.
 
 로컬 watcher(realtime_order_watcher.py)와 달리 루프 없이 1회 실행 후 종료.
-상태(알림 보낸 주문 ID + 오늘 누적금액)는 data/notified_cloud.json에 저장하고,
-GitHub Actions cache로 run 간에 유지한다.
+상태(알림 보낸 주문 ID + 오늘 누적금액)는 GitHub Variable(ORDER_STATE)에 저장.
+GitHub Actions cache 대신 Variable을 사용해 캐시 미스로 인한 중복 bootstrap을 방지.
 
 Cafe24 리프레시 토큰 갱신은 .env 대신 GitHub Repository Variables API를 통해
 저장한다 (시크릿은 프로그래매틱 수정 불가, 변수는 가능).
@@ -13,7 +13,6 @@ import os
 import time
 import traceback
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 import requests as http
 
@@ -86,23 +85,44 @@ def _inject_cached_access_token():
 _inject_cached_access_token()
 
 # ──────────────────────────────────────────────────────────────────
-# 상태 관리 (data/notified_cloud.json)
+# 상태 관리 — GitHub Variable(ORDER_STATE) 기반
+# GitHub Actions cache는 캐시 미스 시 오래된 상태를 복원해 bootstrap이 중복 실행되는
+# 문제가 있으므로 완전히 영속적인 Variable로 대체.
 # ──────────────────────────────────────────────────────────────────
-STATE_PATH = Path("data/notified_cloud.json")
+_GH_VAR_NAME = "ORDER_STATE"
+
+
+def _get_github_variable(name: str) -> str:
+    gh_token = os.environ.get("GH_PAT", "") or os.environ.get("GITHUB_TOKEN", "")
+    gh_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if not gh_token or not gh_repo:
+        return ""
+    headers = {
+        "Authorization": f"Bearer {gh_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    resp = http.get(
+        f"https://api.github.com/repos/{gh_repo}/actions/variables/{name}",
+        headers=headers, timeout=10,
+    )
+    if resp.ok:
+        return resp.json().get("value", "")
+    return ""
 
 
 def load_state() -> dict:
-    if STATE_PATH.exists():
+    raw = _get_github_variable(_GH_VAR_NAME)
+    if raw:
         try:
-            return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+            return json.loads(raw)
         except Exception:
             pass
     return {}
 
 
 def save_state(state: dict):
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    _update_github_variable(_GH_VAR_NAME, json.dumps(state, ensure_ascii=False))
 
 
 # ──────────────────────────────────────────────────────────────────

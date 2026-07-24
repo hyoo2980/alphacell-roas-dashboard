@@ -21,16 +21,6 @@ jobs:
       - name: 코드 체크아웃
         uses: actions/checkout@v4
 
-      - name: 주문 알림 상태 복원 (이전 run에서 저장한 seen 목록)
-        uses: actions/cache@v4
-        with:
-          path: data/notified_cloud.json
-          # run_id를 키에 포함 → 매 run마다 새 항목 저장
-          # restore-keys prefix로 직전 run의 캐시를 복원
-          key: order-state-${{ github.run_id }}
-          restore-keys: |
-            order-state-
-
       - name: Python 설정
         uses: actions/setup-python@v5
         with:
