@@ -72,9 +72,12 @@ def _get(path: str, params: dict):
 
 
 def fetch_orders(date: str):
-    """date: YYYY-MM-DD (KST). Returns list of order entries paid on that day,
+    """date: YYYY-MM-DD (KST). Returns list of order entries placed on that day,
     each including an "items" list (embed=items) so orders can be filtered down
-    to '알파셀 올나잇 세이프' line items only."""
+    to '알파셀 올나잇 세이프' line items only.
+
+    order_date 기준: 결제가 자정 직전에 완료되고 주문이 자정 직후에 생성되는 엣지케이스에서
+    pay_date 기준은 전날로 잡혀 누락됨 — order_date가 실시간 알림에 더 적합."""
     orders = []
     offset = 0
     limit = 100
@@ -84,7 +87,7 @@ def fetch_orders(date: str):
             {
                 "start_date": date,
                 "end_date": date,
-                "date_type": "pay_date",
+                "date_type": "order_date",
                 "embed": "items",
                 "limit": limit,
                 "offset": offset,
