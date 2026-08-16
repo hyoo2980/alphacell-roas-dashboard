@@ -104,13 +104,24 @@ def fetch_orders(date: str):
 
 
 TARGET_PRODUCT_KEYWORD = "올나잇"
+HYULDANG_PRODUCT_KEYWORD = "혈당"
 
 
 def _is_target_item(item: dict) -> bool:
-    """This Cafe24 store has so far only sold '알파셀 올나잇 세이프' (under various
-    promo-label product names), but filter explicitly in case other products get
-    added later -- same pattern as the Coupang/Naver collectors."""
+    """'알파셀 올나잇 세이프' line items (sold under various promo-label product
+    names). The store also sells '알파셀 혈당 세이프' -- see _is_hyuldang_item.
+
+    NOTE: this is what the ROAS pipeline aggregates as 올나잇 revenue, so the
+    '혈당&올나잇 세이프 세트' product counts here and only here."""
     return TARGET_PRODUCT_KEYWORD in item.get("product_name", "")
+
+
+def _is_hyuldang_item(item: dict) -> bool:
+    """'알파셀 혈당 세이프' line items. The combined '혈당&올나잇 세이프 세트'
+    product is deliberately excluded -- it is attributed to 올나잇 only, so a set
+    order raises exactly one alert instead of double-counting in both channels."""
+    name = item.get("product_name", "")
+    return HYULDANG_PRODUCT_KEYWORD in name and TARGET_PRODUCT_KEYWORD not in name
 
 
 def _payment_total(amount_info: dict) -> float:

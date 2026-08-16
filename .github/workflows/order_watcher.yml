@@ -43,8 +43,9 @@ jobs:
           # 네이버
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-          # Discord
+          # Discord (상품군별 채널)
           DISCORD_WEBHOOK_URL_ORDERS: ${{ secrets.DISCORD_WEBHOOK_URL_ORDERS }}
+          DISCORD_WEBHOOK_URL_ORDERS_HYULDANG: ${{ secrets.DISCORD_WEBHOOK_URL_ORDERS_HYULDANG }}
           # GitHub API (토큰 갱신용)
           GH_PAT: ${{ secrets.GH_PAT }}
           GITHUB_REPOSITORY: ${{ github.repository }}

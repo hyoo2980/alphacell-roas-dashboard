@@ -37,14 +37,16 @@ def _update_github_variable(name: str, value: str):
         "X-GitHub-Api-Version": "2022-11-28",
     }
     base_url = f"https://api.github.com/repos/{gh_repo}/actions/variables"
-    resp = http.patch(f"{base_url}/{name}", headers=headers, json={"name": name, "value": value}, timeout=10)
-    if resp.status_code == 404:
-        # 변수가 없으면 새로 생성
-        resp = http.post(base_url, headers=headers, json={"name": name, "value": value}, timeout=10)
-    if resp.ok:
-        print(f"[INFO] GitHub variable '{name}' 갱신 완료")
-    else:
-        print(f"[WARN] GitHub variable '{name}' 갱신 실패: {resp.status_code} {resp.text[:200]}")
+    try:
+        resp = http.patch(f"{base_url}/{name}", headers=headers, json={"name": name, "value": value}, timeout=10)
+        if resp.status_code == 404:
+            resp = http.post(base_url, headers=headers, json={"name": name, "value": value}, timeout=10)
+        if resp.ok:
+            print(f"[INFO] GitHub variable '{name}' 갱신 완료")
+        else:
+            print(f"[WARN] GitHub variable '{name}' 갱신 실패: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        print(f"[WARN] GitHub variable '{name}' 갱신 중 네트워크 오류 (무시): {e}")
 
 
 def _patched_update_env(key: str, value: str):
@@ -135,12 +137,27 @@ WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL_ORDERS", "")
 
 
 def send_alert(platform: str, order_id: str, amount: float, cumulative: float, detail: str = ""):
-    if not WEBHOOK_URL:
-        print(f"[WARN] DISCORD_WEBHOOK_URL_ORDERS 미설정")
+    """네이버(로컬 실행)용 — Cafe24 상품군 알림은 send_group_alert를 쓴다."""
+    _post_embed(
+        WEBHOOK_URL,
+        "DISCORD_WEBHOOK_URL_ORDERS",
+        f"{EMOJI[platform]} 새 주문 — {LABEL[platform]}",
+        COLOR[platform],
+        order_id,
+        amount,
+        cumulative,
+        detail,
+    )
+
+
+def _post_embed(webhook: str, webhook_env: str, title: str, color: int,
+                order_id: str, amount: float, cumulative: float, detail: str = ""):
+    if not webhook:
+        print(f"[WARN] {webhook_env} 미설정 — 알림 건너뜀")
         return
     embed = {
-        "title": f"{EMOJI[platform]} 새 주문 — {LABEL[platform]}",
-        "color": COLOR[platform],
+        "title": title,
+        "color": color,
         "fields": [
             {"name": "주문번호", "value": str(order_id), "inline": True},
             {"name": "금액", "value": f"{amount:,.0f}원", "inline": True},
@@ -152,7 +169,7 @@ def send_alert(platform: str, order_id: str, amount: float, cumulative: float, d
     # Discord 웹훅 429 재시도
     delay = 2.0
     for attempt in range(4):
-        resp = http.post(WEBHOOK_URL, json={"embeds": [embed]}, timeout=30)
+        resp = http.post(webhook, json={"embeds": [embed]}, timeout=30)
         if resp.status_code == 429:
             time.sleep(delay)
             delay *= 2
@@ -165,35 +182,76 @@ def send_alert(platform: str, order_id: str, amount: float, cumulative: float, d
 # ──────────────────────────────────────────────────────────────────
 # 주문 체크 로직
 # ──────────────────────────────────────────────────────────────────
-def check_cafe24(today: str, seen: dict, cumulative: float, is_bootstrap: bool) -> tuple[int, float]:
-    from collectors.cafe24 import _is_target_item, fetch_orders
+# Cafe24 상품군별 알림 채널.
+# seen_prefix는 상태(ORDER_STATE)의 키 접두사 — 기존 상태와 호환되어야 하므로
+# 올나잇의 "cafe24"는 절대 바꾸지 말 것.
+def _cafe24_groups() -> list[dict]:
+    from collectors.cafe24 import _is_hyuldang_item, _is_target_item
+
+    return [
+        {
+            "key": "olnight",
+            "seen_prefix": "cafe24",
+            "title": "🛍️ 새 주문 — 알파셀 올나잇 세이프",
+            "color": 0x1E88E5,
+            "webhook_env": "DISCORD_WEBHOOK_URL_ORDERS",
+            "matches": _is_target_item,
+        },
+        {
+            "key": "hyuldang",
+            "seen_prefix": "cafe24hd",
+            "title": "🩸 새 주문 — 알파셀 혈당 세이프",
+            "color": 0xFB8C00,
+            "webhook_env": "DISCORD_WEBHOOK_URL_ORDERS_HYULDANG",
+            "matches": _is_hyuldang_item,
+        },
+    ]
+
+
+def check_cafe24(today: str, seen: dict, cumulatives: dict, bootstrapped: list) -> dict:
+    """상품군별로 주문을 분류해 각자의 Discord 채널로 알린다.
+    주문 목록은 한 번만 조회하고 그룹별로 필터링한다.
+    seen / cumulatives / bootstrapped는 제자리에서 갱신된다."""
+    from collectors.cafe24 import fetch_orders
 
     orders = fetch_orders(today)
-    new_count = 0
-    for o in orders:
-        items = o.get("items", [])
-        target_items = [i for i in items if _is_target_item(i)]
-        if not target_items or len(target_items) != len(items):
-            continue  # 비대상 상품 또는 혼합 주문 제외
+    new_counts = {}
 
-        oid = o["order_id"]
-        key = f"cafe24:{oid}"
-        if key in seen:
-            continue
+    for group in _cafe24_groups():
+        gkey = group["key"]
+        is_bootstrap = gkey not in bootstrapped
+        webhook = os.environ.get(group["webhook_env"], "")
+        cumulative = float(cumulatives.get(gkey, 0.0))
+        new_count = 0
 
-        amount = float(o.get("actual_order_amount", {}).get("payment_amount", 0))
+        for o in orders:
+            items = o.get("items", [])
+            target_items = [i for i in items if group["matches"](i)]
+            if not target_items or len(target_items) != len(items):
+                continue  # 비대상 상품 또는 혼합 주문 제외
+
+            oid = o["order_id"]
+            key = f"{group['seen_prefix']}:{oid}"
+            if key in seen:
+                continue
+
+            amount = float(o.get("actual_order_amount", {}).get("payment_amount", 0))
+            cumulative += amount
+            if not is_bootstrap:
+                names = ", ".join(i.get("product_name", "") for i in target_items)
+                _post_embed(webhook, group["webhook_env"], group["title"], group["color"],
+                            oid, amount, cumulative, detail=names)
+                new_count += 1
+            # 부트스트랩이면 기존 주문 → 알림 없이 기록만
+            seen[key] = amount
+
+        cumulatives[gkey] = cumulative
         if is_bootstrap:
-            # 기존 주문 → 알림 없이 기록만
-            seen[key] = amount
-            cumulative += amount
-        else:
-            cumulative += amount
-            names = ", ".join(i.get("product_name", "") for i in target_items)
-            send_alert("cafe24", oid, amount, cumulative, detail=names)
-            seen[key] = amount
-            new_count += 1
+            bootstrapped.append(gkey)
+            print(f"[INFO] {gkey}: 부트스트랩 완료 — 기존 주문 무음 처리, 누적={cumulative:,.0f}원")
+        new_counts[gkey] = new_count
 
-    return new_count, cumulative
+    return new_counts
 
 
 def check_naver(today: str, seen: dict, cumulative: float, is_bootstrap: bool) -> tuple[int, float]:
@@ -234,37 +292,45 @@ def main():
     today = datetime.now(_KST).date().isoformat()
 
     state = load_state()
-    # state 구조: {"date": "YYYY-MM-DD", "seen": {...}, "cumulative": float}
-    # 날짜가 바뀌거나 seen이 비어있으면 bootstrap (기존 주문 무음 처리)
+    # state 구조: {"date": "YYYY-MM-DD", "seen": {...},
+    #             "cumulatives": {상품군: float}, "bootstrapped": [상품군, ...]}
+    # bootstrapped에 없는 상품군은 첫 실행 때 기존 주문을 무음 흡수한다.
+    # 상품군을 새로 추가해도 그 군만 부트스트랩되고 나머지는 정상 동작.
     if state.get("date") != today:
-        state = {"date": today, "seen": {}, "cumulative": 0.0}
-        is_bootstrap = True
+        state = {"date": today}
+        seen, cumulatives, bootstrapped = {}, {}, []
         print(f"[INFO] 새 날짜({today}) 감지 — 상태 초기화 및 부트스트랩 실행")
     elif "seen" not in state:
         # seen 키 자체가 없는 경우만 재부트스트랩 (빈 딕셔너리는 정상 상태)
-        is_bootstrap = True
+        seen, cumulatives, bootstrapped = {}, {}, []
         print(f"[INFO] seen 키 없음 — 부트스트랩 재실행")
     else:
-        is_bootstrap = False
+        seen = state["seen"]
+        # 구 상태 마이그레이션: cumulative(단일) → cumulatives(상품군별),
+        # bootstrapped 없으면 올나잇은 이미 운영 중이었으므로 완료로 간주
+        cumulatives = state.get("cumulatives") or {"olnight": float(state.get("cumulative", 0.0))}
+        bootstrapped = state.get("bootstrapped") or ["olnight"]
 
-    seen: dict = state.get("seen", {})
-    cumulative: float = float(state.get("cumulative", 0.0))
-
-    print(f"[INFO] 날짜={today}, 부트스트랩={is_bootstrap}, 기존 seen={len(seen)}건, 누적={cumulative:,.0f}원")
+    print(f"[INFO] 날짜={today}, 기존 seen={len(seen)}건, "
+          f"누적={ {k: f'{v:,.0f}원' for k, v in cumulatives.items()} }, 부트스트랩완료={bootstrapped}")
 
     # Cafe24
     try:
-        new_c24, cumulative = check_cafe24(today, seen, cumulative, is_bootstrap)
-        print(f"[INFO] Cafe24: 신규 알림 {new_c24}건")
+        new_counts = check_cafe24(today, seen, cumulatives, bootstrapped)
+        for gkey, n in new_counts.items():
+            print(f"[INFO] Cafe24/{gkey}: 신규 알림 {n}건")
     except Exception:
         print(f"[ERROR] Cafe24 체크 실패:\n{traceback.format_exc()}")
 
     # 네이버는 IP 화이트리스트 제한으로 로컬 PC에서 별도 실행
 
     state["seen"] = seen
-    state["cumulative"] = cumulative
+    state["cumulatives"] = cumulatives
+    state["bootstrapped"] = bootstrapped
+    state.pop("cumulative", None)  # 구 형식 잔재 정리
     save_state(state)
-    print(f"[INFO] 완료 — seen 총 {len(seen)}건, 누적={cumulative:,.0f}원")
+    print(f"[INFO] 완료 — seen 총 {len(seen)}건, "
+          f"누적={ {k: f'{v:,.0f}원' for k, v in cumulatives.items()} }")
 
 
 if __name__ == "__main__":
