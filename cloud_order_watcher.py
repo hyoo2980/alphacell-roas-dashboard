@@ -296,14 +296,23 @@ def main():
     #             "cumulatives": {상품군: float}, "bootstrapped": [상품군, ...]}
     # bootstrapped에 없는 상품군은 첫 실행 때 기존 주문을 무음 흡수한다.
     # 상품군을 새로 추가해도 그 군만 부트스트랩되고 나머지는 정상 동작.
-    if state.get("date") != today:
+    yesterday = (datetime.now(_KST).date() - timedelta(days=1)).isoformat()
+    prev_date = state.get("date")
+
+    if prev_date == yesterday and "seen" in state:
+        # 정상적인 날짜 롤오버. 어제까지 상태가 멀쩡했으므로 새 날에는 밀린 주문이
+        # 존재할 수 없고, 지금 조회되는 주문은 전부 진짜 신규다. 여기서 부트스트랩하면
+        # 자정 직후(00:00~00:02)에 들어온 주문이 매일 무음 처리되어 사라진다.
+        state = {"date": today}
+        seen, cumulatives = {}, {}
+        bootstrapped = [g["key"] for g in _cafe24_groups()]
+        print(f"[INFO] 날짜 롤오버({yesterday}→{today}) — 상태만 초기화, 알림은 즉시 발송")
+    elif prev_date != today or "seen" not in state:
+        # 상태 유실 또는 장기 중단(하루 이상 공백). 그날 이미 쌓인 주문이 한꺼번에
+        # 쏟아지는 것을 막기 위해 무음 부트스트랩한다.
         state = {"date": today}
         seen, cumulatives, bootstrapped = {}, {}, []
-        print(f"[INFO] 새 날짜({today}) 감지 — 상태 초기화 및 부트스트랩 실행")
-    elif "seen" not in state:
-        # seen 키 자체가 없는 경우만 재부트스트랩 (빈 딕셔너리는 정상 상태)
-        seen, cumulatives, bootstrapped = {}, {}, []
-        print(f"[INFO] seen 키 없음 — 부트스트랩 재실행")
+        print(f"[INFO] 상태 유실/장기 중단 감지(이전 날짜={prev_date}) — 부트스트랩 실행")
     else:
         seen = state["seen"]
         # 구 상태 마이그레이션: cumulative(단일) → cumulatives(상품군별),
