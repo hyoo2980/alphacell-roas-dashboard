@@ -303,10 +303,28 @@ def main():
         # 정상적인 날짜 롤오버. 어제까지 상태가 멀쩡했으므로 새 날에는 밀린 주문이
         # 존재할 수 없고, 지금 조회되는 주문은 전부 진짜 신규다. 여기서 부트스트랩하면
         # 자정 직후(00:00~00:02)에 들어온 주문이 매일 무음 처리되어 사라진다.
+        #
+        # 넘어가기 전에 어제를 마지막으로 한 번 더 훑는다. 어제의 마지막 폴링(23:58)과
+        # 자정 사이에 들어온 주문은 아직 아무도 본 적이 없는데, 오늘 날짜로 조회하면
+        # order_date가 어제라 영영 잡히지 않고 사라진다.
+        try:
+            late = check_cafe24(
+                yesterday,
+                state["seen"],
+                state.get("cumulatives") or {"olnight": float(state.get("cumulative", 0.0))},
+                state.get("bootstrapped") or ["olnight"],
+            )
+            for gkey, n in late.items():
+                if n:
+                    print(f"[INFO] 어제({yesterday}) 마감 직전 주문 {gkey}: {n}건 알림 발송")
+        except Exception:
+            print(f"[ERROR] 어제({yesterday}) 마감 스윕 실패:")
+            print(traceback.format_exc())
+
         state = {"date": today}
         seen, cumulatives = {}, {}
         bootstrapped = [g["key"] for g in _cafe24_groups()]
-        print(f"[INFO] 날짜 롤오버({yesterday}→{today}) — 상태만 초기화, 알림은 즉시 발송")
+        print(f"[INFO] 날짜 롤오버({yesterday}→{today}) — 상태 초기화, 알림은 즉시 발송")
     elif prev_date != today or "seen" not in state:
         # 상태 유실 또는 장기 중단(하루 이상 공백). 그날 이미 쌓인 주문이 한꺼번에
         # 쏟아지는 것을 막기 위해 무음 부트스트랩한다.
