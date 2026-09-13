@@ -8,13 +8,38 @@ permissions:
   # CAFE24_REFRESH_TOKEN을 GitHub Variables API로 갱신하기 위해 필요
   actions: write
 
-concurrency:
-  group: order-watcher-alphacell
-  cancel-in-progress: false  # 동시 실행 방지 — 새 run은 이전 run 완료 후 실행
-
 jobs:
+  # 멈춘 run 청소. check-orders만 줄(concurrency)을 서고 이 작업은 줄 밖에서 돈다.
+  # GitHub 쪽 오류로 run 하나가 대기 상태로 멈추면 그 뒤 run이 전부 막혀 알림이
+  # 끊기는데(9/13 13:24~16:10 사례), 다음 트리거 때 이 작업이 멈춘 run을 치운다.
+  unstick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: 6분 넘게 멈춘 run 취소
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          THRESHOLD=360   # 정상 run은 timeout 4분 안에 끝나므로 6분 초과 = 멈춤
+          now=$(date -u +%s)
+          for st in queued in_progress waiting pending requested; do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow order_watcher.yml               --status "$st" --limit 50 --json databaseId,createdAt               --jq '.[] | "\(.databaseId) \(.createdAt)"'
+          done | sort -u | while read -r id created; do
+            [ "$id" = "$GITHUB_RUN_ID" ] && continue
+            age=$(( now - $(date -u -d "$created" +%s) ))
+            [ "$age" -lt "$THRESHOLD" ] && continue
+            [ "$age" -gt 86400 ] && continue   # 취소 불가한 오래된 유령 run 반복 시도 방지
+            echo "멈춘 run $id (${age}초 경과) 취소"
+            gh run cancel "$id" --repo "$GITHUB_REPOSITORY"               || gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/force-cancel"               || true
+          done
+          echo "청소 완료"
+
   check-orders:
     runs-on: ubuntu-latest
+    # 동시 실행 방지(토큰 회전 경쟁 방지) — 워크플로 전체가 아니라 이 작업에만 건다.
+    concurrency:
+      group: order-watcher-alphacell
+      cancel-in-progress: false
     timeout-minutes: 4  # 5분 주기이므로 4분 안에 반드시 종료
 
     steps:
